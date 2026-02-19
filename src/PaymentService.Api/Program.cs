@@ -5,13 +5,18 @@ using Polly;
 using Scalar.AspNetCore;
 using Serilog;
 using System.Threading.RateLimiting;
+using AppPaymentService = PaymentService.Application.Services.PaymentService;
 using PaymentService.Api.Auth;
-using PaymentService.Api.Data;
+using PaymentService.Api.Handlers;
 using PaymentService.Api.Middleware;
-using PaymentService.Api.Models;
-using PaymentService.Api.Processors;
-using PaymentService.Api.Repositories;
-using PaymentService.Api.Validation;
+using PaymentService.Application.Models;
+using PaymentService.Application.Options;
+using PaymentService.Application.Services;
+using PaymentService.Application.Validation;
+using PaymentService.Core.Abstractions;
+using PaymentService.Infrastructure.Data;
+using PaymentService.Infrastructure.Processors;
+using PaymentService.Infrastructure.Repositories;
 
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
@@ -50,14 +55,21 @@ try
             sp.GetRequiredService<IAsyncPolicy>()));
 
     // Service
-    builder.Services.AddScoped<PaymentService.Api.Services.IPaymentService, PaymentService.Api.Services.PaymentService>();
+    builder.Services.AddScoped<IPaymentService, AppPaymentService>();
 
     // Validation
+    builder.Services.Configure<PaymentOptions>(builder.Configuration.GetSection(PaymentOptions.SectionName));
     builder.Services.AddScoped<IValidator<CreatePaymentRequest>, CreatePaymentRequestValidator>();
 
     // Auth
     builder.Services.AddJwtAuthentication(builder.Configuration);
+    builder.Services.AddScoped<ITokenService, TokenService>();
     builder.Services.AddAuthorization();
+
+    // Startup validation — fail fast on missing required config
+    var jwtKey = builder.Configuration["Jwt:SecretKey"];
+    if (string.IsNullOrWhiteSpace(jwtKey))
+        throw new InvalidOperationException("Jwt:SecretKey is required but not configured.");
 
     // Rate limiting
     builder.Services.AddRateLimiter(options =>
@@ -72,8 +84,15 @@ try
                 }));
     });
 
+    // Exception handlers
+    builder.Services.AddExceptionHandler<ValidationExceptionHandler>();
+    builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+    builder.Services.AddProblemDetails();
+    builder.Services.AddMemoryCache();
+
     builder.Services.AddControllers();
     builder.Services.AddOpenApi();
+    builder.Services.AddHealthChecks();
 
     var app = builder.Build();
 
@@ -82,12 +101,13 @@ try
     dbInitializer.Initialize();
 
     // Middleware
-    app.UseMiddleware<ExceptionHandlingMiddleware>();
+    app.UseExceptionHandler();
     app.UseMiddleware<RequestLoggingMiddleware>();
     app.UseHttpsRedirection();
     app.UseRateLimiter();
     app.UseAuthentication();
     app.UseAuthorization();
+    app.UseMiddleware<IdempotencyMiddleware>();
 
     if (app.Environment.IsDevelopment())
     {
@@ -96,6 +116,7 @@ try
     }
 
     app.MapControllers();
+    app.MapHealthChecks("/healthz");
 
     app.Run();
 }

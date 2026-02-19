@@ -1,14 +1,13 @@
-<Project Sdk="Microsoft.NET.Sdk.Web">
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RootNamespace>PaymentService.Api</RootNamespace>
+    <UserSecretsId>9aa37cd9-3bf6-4740-b22f-fc9dfb7d0c64</UserSecretsId>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Dapper" Version="2.1.35" />
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="9.0.0" />
-    <PackageReference Include="FluentValidation.AspNetCore" Version="11.3.0" />
+    <PackageReference Include="FluentValidation" Version="11.11.0" />
     <PackageReference Include="Polly" Version="7.2.4" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="9.0.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.0" />
@@ -17,5 +16,20 @@
     <PackageReference Include="Scalar.AspNetCore" Version="2.0.36" />
     <PackageReference Include="Azure.Identity" Version="1.13.2" />
     <PackageReference Include="Azure.Extensions.AspNetCore.Configuration.Secrets" Version="1.4.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\PaymentService.Core\PaymentService.Core.csproj" />
+    <ProjectReference Include="..\PaymentService.Application\PaymentService.Application.csproj" />
+    <ProjectReference Include="..\PaymentService.Infrastructure\PaymentService.Infrastructure.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="Data\" />
+    <Folder Include="Domain\" />
+    <Folder Include="Options\" />
+    <Folder Include="Processors\" />
+    <Folder Include="Repositories\" />
+    <Folder Include="Results\" />
+    <Folder Include="Services\" />
+    <Folder Include="Validation\" />
   </ItemGroup>
 </Project>

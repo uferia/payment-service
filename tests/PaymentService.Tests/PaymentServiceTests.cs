@@ -1,9 +1,9 @@
+using FluentAssertions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Moq;
-using PaymentService.Api.Domain;
-using PaymentService.Api.Models;
-using PaymentService.Api.Processors;
-using PaymentService.Api.Repositories;
+using PaymentService.Application.Models;
+using PaymentService.Core.Abstractions;
+using PaymentService.Core.Domain;
 
 namespace PaymentService.Tests;
 
@@ -12,14 +12,14 @@ public class PaymentServiceTests
 {
     private Mock<IPaymentRepository> _repositoryMock = null!;
     private Mock<IPaymentProcessor> _processorMock = null!;
-    private PaymentService.Api.Services.PaymentService _service = null!;
+    private PaymentService.Application.Services.PaymentService _service = null!;
 
     [TestInitialize]
     public void Setup()
     {
         _repositoryMock = new Mock<IPaymentRepository>();
         _processorMock = new Mock<IPaymentProcessor>();
-        _service = new PaymentService.Api.Services.PaymentService(_repositoryMock.Object, _processorMock.Object);
+        _service = new PaymentService.Application.Services.PaymentService(_repositoryMock.Object, _processorMock.Object);
     }
 
     [TestMethod]
@@ -31,10 +31,11 @@ public class PaymentServiceTests
         _repositoryMock.Setup(r => r.UpdateStatusAsync(It.IsAny<Guid>(), It.IsAny<PaymentStatus>(), It.IsAny<string?>())).Returns(Task.CompletedTask);
 
         var request = new CreatePaymentRequest { Amount = 100m, Currency = "USD", ReferenceId = "REF-001" };
-        var (response, isExisting) = await _service.CreatePaymentAsync(request);
+        var result = await _service.CreatePaymentAsync(request);
 
-        Assert.IsFalse(isExisting);
-        Assert.AreEqual("Completed", response.Status);
+        result.IsSuccess.Should().BeTrue();
+        result.Value.IsExisting.Should().BeFalse();
+        result.Value.Payment.Status.Should().Be("Completed");
     }
 
     [TestMethod]
@@ -44,10 +45,11 @@ public class PaymentServiceTests
         _repositoryMock.Setup(r => r.GetByReferenceIdAsync("REF-001")).ReturnsAsync(existing);
 
         var request = new CreatePaymentRequest { Amount = 100m, Currency = "USD", ReferenceId = "REF-001" };
-        var (response, isExisting) = await _service.CreatePaymentAsync(request);
+        var result = await _service.CreatePaymentAsync(request);
 
-        Assert.IsTrue(isExisting);
-        Assert.AreEqual("Completed", response.Status);
+        result.IsSuccess.Should().BeTrue();
+        result.Value.IsExisting.Should().BeTrue();
+        result.Value.Payment.Status.Should().Be("Completed");
     }
 
     [TestMethod]
@@ -60,13 +62,14 @@ public class PaymentServiceTests
         _repositoryMock.Setup(r => r.CreateAsync(It.IsAny<Payment>())).ReturnsAsync(false);
 
         var request = new CreatePaymentRequest { Amount = 50m, Currency = "EUR", ReferenceId = "REF-002" };
-        var (response, isExisting) = await _service.CreatePaymentAsync(request);
+        var result = await _service.CreatePaymentAsync(request);
 
-        Assert.IsTrue(isExisting);
+        result.IsSuccess.Should().BeTrue();
+        result.Value.IsExisting.Should().BeTrue();
     }
 
     [TestMethod]
-    public async Task CreatePayment_Rejected_ReturnsRejected()
+    public async Task CreatePayment_Rejected_ReturnsRejectedError()
     {
         _repositoryMock.Setup(r => r.GetByReferenceIdAsync(It.IsAny<string>())).ReturnsAsync((Payment?)null);
         _repositoryMock.Setup(r => r.CreateAsync(It.IsAny<Payment>())).ReturnsAsync(true);
@@ -74,10 +77,11 @@ public class PaymentServiceTests
         _repositoryMock.Setup(r => r.UpdateStatusAsync(It.IsAny<Guid>(), It.IsAny<PaymentStatus>(), It.IsAny<string?>())).Returns(Task.CompletedTask);
 
         var request = new CreatePaymentRequest { Amount = 100m, Currency = "USD", ReferenceId = "REF-003" };
-        var (response, isExisting) = await _service.CreatePaymentAsync(request);
+        var result = await _service.CreatePaymentAsync(request);
 
-        Assert.IsFalse(isExisting);
-        Assert.AreEqual("Rejected", response.Status);
+        result.IsFailure.Should().BeTrue();
+        result.Error!.Code.Should().Be("payment.rejected");
+        result.Error.StatusCode.Should().Be(422);
     }
 
     [TestMethod]
@@ -89,14 +93,15 @@ public class PaymentServiceTests
         _repositoryMock.Setup(r => r.UpdateStatusAsync(It.IsAny<Guid>(), It.IsAny<PaymentStatus>(), It.IsAny<string?>())).Returns(Task.CompletedTask);
 
         var request = new CreatePaymentRequest { Amount = 20000m, Currency = "USD", ReferenceId = "REF-004" };
-        var (response, isExisting) = await _service.CreatePaymentAsync(request);
+        var result = await _service.CreatePaymentAsync(request);
 
-        Assert.IsFalse(isExisting);
-        Assert.AreEqual("Processing", response.Status);
+        result.IsSuccess.Should().BeTrue();
+        result.Value.IsExisting.Should().BeFalse();
+        result.Value.Payment.Status.Should().Be("Processing");
     }
 
     [TestMethod]
-    public async Task CreatePayment_Failed_ReturnsFailed()
+    public async Task CreatePayment_Failed_ReturnsServiceUnavailableError()
     {
         _repositoryMock.Setup(r => r.GetByReferenceIdAsync(It.IsAny<string>())).ReturnsAsync((Payment?)null);
         _repositoryMock.Setup(r => r.CreateAsync(It.IsAny<Payment>())).ReturnsAsync(true);
@@ -104,9 +109,10 @@ public class PaymentServiceTests
         _repositoryMock.Setup(r => r.UpdateStatusAsync(It.IsAny<Guid>(), It.IsAny<PaymentStatus>(), It.IsAny<string?>())).Returns(Task.CompletedTask);
 
         var request = new CreatePaymentRequest { Amount = 100m, Currency = "USD", ReferenceId = "REF-005" };
-        var (response, isExisting) = await _service.CreatePaymentAsync(request);
+        var result = await _service.CreatePaymentAsync(request);
 
-        Assert.IsFalse(isExisting);
-        Assert.AreEqual("Failed", response.Status);
+        result.IsFailure.Should().BeTrue();
+        result.Error!.Code.Should().Be("service.unavailable");
+        result.Error.StatusCode.Should().Be(503);
     }
 }

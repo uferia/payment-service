@@ -1,9 +1,9 @@
 using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Polly.CircuitBreaker;
-using PaymentService.Api.Models;
-using PaymentService.Api.Services;
+using PaymentService.Application.Models;
+using PaymentService.Application.Services;
+using PaymentService.Core.Results;
 
 namespace PaymentService.Api.Controllers;
 
@@ -33,69 +33,45 @@ public class PaymentsController : ControllerBase
         if (!validationResult.IsValid)
             throw new ValidationException(validationResult.Errors);
 
-        try
-        {
-            var (response, isExisting) = await _paymentService.CreatePaymentAsync(request);
+        var result = await _paymentService.CreatePaymentAsync(request);
 
-            if (response.Status == "Rejected")
-            {
-                return UnprocessableEntity(new ErrorResponse
-                {
-                    Type = "https://tools.ietf.org/html/rfc7231#section-6.5.1",
-                    Title = "Payment Rejected",
-                    Status = 422,
-                    Detail = response.FailureReason ?? "Payment was rejected.",
-                    TraceId = HttpContext.TraceIdentifier
-                });
-            }
+        if (result.IsFailure)
+            return ToErrorResponse(result.Error!);
 
-            if (response.Status == "Failed")
-            {
-                return StatusCode(503, new ErrorResponse
-                {
-                    Type = "https://tools.ietf.org/html/rfc7231#section-6.6.4",
-                    Title = "Service Unavailable",
-                    Status = 503,
-                    Detail = "Payment processing is temporarily unavailable. Please retry later.",
-                    TraceId = HttpContext.TraceIdentifier,
-                    RetryAfterSeconds = 30
-                });
-            }
+        var (payment, isExisting) = result.Value;
 
-            if (isExisting)
-                return Ok(response);
+        if (isExisting)
+            return Ok(payment);
 
-            return CreatedAtAction(nameof(GetPaymentById), new { id = response.Id }, response);
-        }
-        catch (BrokenCircuitException)
-        {
-            return StatusCode(503, new ErrorResponse
-            {
-                Type = "https://tools.ietf.org/html/rfc7231#section-6.6.4",
-                Title = "Service Unavailable",
-                Status = 503,
-                Detail = "Payment processing is temporarily unavailable. Please retry later.",
-                TraceId = HttpContext.TraceIdentifier,
-                RetryAfterSeconds = 30
-            });
-        }
+        return CreatedAtAction(nameof(GetPaymentById), new { id = payment.Id }, payment);
     }
 
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetPaymentById(Guid id)
     {
-        var payment = await _paymentService.GetPaymentByIdAsync(id);
-        if (payment == null)
+        var result = await _paymentService.GetPaymentByIdAsync(id);
+        if (result.IsFailure)
             return NotFound();
-        return Ok(payment);
+        return Ok(result.Value);
     }
 
     [HttpGet("reference/{referenceId}")]
     public async Task<IActionResult> GetPaymentByReference(string referenceId)
     {
-        var payment = await _paymentService.GetPaymentByReferenceIdAsync(referenceId);
-        if (payment == null)
+        var result = await _paymentService.GetPaymentByReferenceIdAsync(referenceId);
+        if (result.IsFailure)
             return NotFound();
-        return Ok(payment);
+        return Ok(result.Value);
     }
+
+    private ObjectResult ToErrorResponse(Error error) =>
+        StatusCode(error.StatusCode, new ErrorResponse
+        {
+            Type = error.RfcType,
+            Title = error.Title,
+            Status = error.StatusCode,
+            Detail = error.Detail,
+            TraceId = HttpContext.TraceIdentifier,
+            RetryAfterSeconds = error.RetryAfterSeconds
+        });
 }

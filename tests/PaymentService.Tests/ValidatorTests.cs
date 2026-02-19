@@ -1,8 +1,10 @@
+using FluentAssertions;
 using FluentValidation;
-using FluentValidation.Results;
+using Microsoft.Extensions.Options;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using PaymentService.Api.Models;
-using PaymentService.Api.Validation;
+using PaymentService.Application.Models;
+using PaymentService.Application.Options;
+using PaymentService.Application.Validation;
 
 namespace PaymentService.Tests;
 
@@ -14,7 +16,11 @@ public class ValidatorTests
     [TestInitialize]
     public void Setup()
     {
-        _validator = new CreatePaymentRequestValidator();
+        var options = Options.Create(new PaymentOptions
+        {
+            SupportedCurrencies = ["USD", "EUR", "GBP", "PHP", "JPY", "AUD", "CAD", "CHF", "SGD", "HKD"]
+        });
+        _validator = new CreatePaymentRequestValidator(options);
     }
 
     [TestMethod]
@@ -22,7 +28,7 @@ public class ValidatorTests
     {
         var request = new CreatePaymentRequest { Amount = 100.00m, Currency = "USD", ReferenceId = "REF-001" };
         var result = _validator.Validate(request);
-        Assert.IsTrue(result.IsValid);
+        result.IsValid.Should().BeTrue();
     }
 
     [TestMethod]
@@ -33,7 +39,7 @@ public class ValidatorTests
     {
         var request = new CreatePaymentRequest { Amount = (decimal)amount, Currency = "USD", ReferenceId = "REF-001" };
         var result = _validator.Validate(request);
-        Assert.IsFalse(result.IsValid);
+        result.IsValid.Should().BeFalse();
     }
 
     [TestMethod]
@@ -41,7 +47,7 @@ public class ValidatorTests
     {
         var request = new CreatePaymentRequest { Amount = 10.123m, Currency = "USD", ReferenceId = "REF-001" };
         var result = _validator.Validate(request);
-        Assert.IsFalse(result.IsValid);
+        result.IsValid.Should().BeFalse();
     }
 
     [TestMethod]
@@ -53,7 +59,7 @@ public class ValidatorTests
     {
         var request = new CreatePaymentRequest { Amount = 100m, Currency = currency, ReferenceId = "REF-001" };
         var result = _validator.Validate(request);
-        Assert.IsFalse(result.IsValid);
+        result.IsValid.Should().BeFalse();
     }
 
     [TestMethod]
@@ -64,7 +70,7 @@ public class ValidatorTests
     {
         var request = new CreatePaymentRequest { Amount = 100m, Currency = currency, ReferenceId = "REF-001" };
         var result = _validator.Validate(request);
-        Assert.IsTrue(result.IsValid);
+        result.IsValid.Should().BeTrue();
     }
 
     [TestMethod]
@@ -72,7 +78,7 @@ public class ValidatorTests
     {
         var request = new CreatePaymentRequest { Amount = 100m, Currency = "USD", ReferenceId = "" };
         var result = _validator.Validate(request);
-        Assert.IsFalse(result.IsValid);
+        result.IsValid.Should().BeFalse();
     }
 
     [TestMethod]
@@ -80,7 +86,7 @@ public class ValidatorTests
     {
         var request = new CreatePaymentRequest { Amount = 100m, Currency = "USD", ReferenceId = "REF@001" };
         var result = _validator.Validate(request);
-        Assert.IsFalse(result.IsValid);
+        result.IsValid.Should().BeFalse();
     }
 
     [TestMethod]
@@ -88,6 +94,6 @@ public class ValidatorTests
     {
         var request = new CreatePaymentRequest { Amount = 100m, Currency = "USD", ReferenceId = new string('a', 101) };
         var result = _validator.Validate(request);
-        Assert.IsFalse(result.IsValid);
+        result.IsValid.Should().BeFalse();
     }
 }

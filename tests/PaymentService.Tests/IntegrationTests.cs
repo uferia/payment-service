@@ -2,9 +2,10 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using PaymentService.Api.Models;
+using PaymentService.Application.Models;
 
 namespace PaymentService.Tests;
 
@@ -57,11 +58,11 @@ public class IntegrationTests
         var request = new CreatePaymentRequest { Amount = 50m, Currency = "USD", ReferenceId = $"REF-{Guid.NewGuid()}" };
         var response = await _client.PostAsJsonAsync("/api/payments", request);
 
-        Assert.AreEqual(HttpStatusCode.Created, response.StatusCode);
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
     }
 
     [TestMethod]
-    public async Task Post_Duplicate_Payment_Returns200()
+    public async Task Post_Duplicate_Payment_Returns200_With_Same_Body()
     {
         var token = await GetTokenAsync();
         _client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
@@ -69,10 +70,15 @@ public class IntegrationTests
         var referenceId = $"REF-DUP-{Guid.NewGuid()}";
         var request = new CreatePaymentRequest { Amount = 50m, Currency = "USD", ReferenceId = referenceId };
 
-        await _client.PostAsJsonAsync("/api/payments", request);
-        var response = await _client.PostAsJsonAsync("/api/payments", request);
+        var firstResponse = await _client.PostAsJsonAsync("/api/payments", request);
+        var firstBody = await firstResponse.Content.ReadAsStringAsync();
 
-        Assert.AreEqual(HttpStatusCode.OK, response.StatusCode);
+        var secondResponse = await _client.PostAsJsonAsync("/api/payments", request);
+        var secondBody = await secondResponse.Content.ReadAsStringAsync();
+
+        firstResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        secondResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        secondBody.Should().Be(firstBody);
     }
 
     [TestMethod]
@@ -84,7 +90,7 @@ public class IntegrationTests
         var request = new CreatePaymentRequest { Amount = -1m, Currency = "USD", ReferenceId = "REF-BAD" };
         var response = await _client.PostAsJsonAsync("/api/payments", request);
 
-        Assert.AreEqual(HttpStatusCode.BadRequest, response.StatusCode);
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     [TestMethod]
@@ -100,7 +106,7 @@ public class IntegrationTests
 
         var getResponse = await _client.GetAsync($"/api/payments/{paymentResponse!.Id}");
 
-        Assert.AreEqual(HttpStatusCode.OK, getResponse.StatusCode);
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
     [TestMethod]
@@ -111,7 +117,7 @@ public class IntegrationTests
 
         var response = await _client.GetAsync($"/api/payments/{Guid.NewGuid()}");
 
-        Assert.AreEqual(HttpStatusCode.NotFound, response.StatusCode);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     [TestMethod]
@@ -119,6 +125,48 @@ public class IntegrationTests
     {
         _client.DefaultRequestHeaders.Authorization = null;
         var response = await _client.GetAsync($"/api/payments/{Guid.NewGuid()}");
-        Assert.AreEqual(HttpStatusCode.Unauthorized, response.StatusCode);
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [TestMethod]
+    public async Task Post_With_Same_IdempotencyKey_Returns_Cached_Response()
+    {
+        var token = await GetTokenAsync();
+        var idempotencyKey = Guid.NewGuid().ToString();
+        var request = new CreatePaymentRequest { Amount = 50m, Currency = "USD", ReferenceId = $"REF-IK-{Guid.NewGuid()}" };
+
+        using var firstMsg = new HttpRequestMessage(HttpMethod.Post, "/api/payments");
+        firstMsg.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        firstMsg.Headers.Add("Idempotency-Key", idempotencyKey);
+        firstMsg.Content = JsonContent.Create(request);
+        var firstResponse = await _client.SendAsync(firstMsg);
+        var firstBody = await firstResponse.Content.ReadAsStringAsync();
+
+        using var secondMsg = new HttpRequestMessage(HttpMethod.Post, "/api/payments");
+        secondMsg.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        secondMsg.Headers.Add("Idempotency-Key", idempotencyKey);
+        secondMsg.Content = JsonContent.Create(request);
+        var secondResponse = await _client.SendAsync(secondMsg);
+        var secondBody = await secondResponse.Content.ReadAsStringAsync();
+
+        firstResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        secondResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        secondResponse.Headers.Should().ContainKey("Idempotency-Replay");
+        secondBody.Should().Be(firstBody);
+    }
+
+    [TestMethod]
+    public async Task Post_With_Invalid_IdempotencyKey_Returns400()
+    {
+        var token = await GetTokenAsync();
+
+        using var msg = new HttpRequestMessage(HttpMethod.Post, "/api/payments");
+        msg.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        msg.Headers.Add("Idempotency-Key", "not-a-guid");
+        msg.Content = JsonContent.Create(new CreatePaymentRequest { Amount = 50m, Currency = "USD", ReferenceId = $"REF-{Guid.NewGuid()}" });
+
+        var response = await _client.SendAsync(msg);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 }

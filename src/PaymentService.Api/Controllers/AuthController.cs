@@ -1,9 +1,6 @@
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.IdentityModel.Tokens;
+using PaymentService.Api.Auth;
 
 namespace PaymentService.Api.Controllers;
 
@@ -12,31 +9,22 @@ namespace PaymentService.Api.Controllers;
 [AllowAnonymous]
 public class AuthController : ControllerBase
 {
-    private readonly IConfiguration _configuration;
+    private readonly ITokenService _tokenService;
+    private readonly IWebHostEnvironment _env;
 
-    public AuthController(IConfiguration configuration)
+    public AuthController(ITokenService tokenService, IWebHostEnvironment env)
     {
-        _configuration = configuration;
+        _tokenService = tokenService;
+        _env = env;
     }
 
     [HttpPost("token")]
     public IActionResult GetToken()
     {
-        var secretKey = _configuration["Jwt:SecretKey"]
-            ?? throw new InvalidOperationException("Jwt:SecretKey is not configured.");
-        var issuer = _configuration["Jwt:Issuer"] ?? "PaymentService";
-        var audience = _configuration["Jwt:Audience"] ?? "PaymentServiceClients";
+        if (!_env.IsDevelopment())
+            return NotFound();
 
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
-        var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-
-        var token = new JwtSecurityToken(
-            issuer: issuer,
-            audience: audience,
-            claims: new[] { new Claim(ClaimTypes.Name, "test-user") },
-            expires: DateTime.UtcNow.AddHours(1),
-            signingCredentials: credentials);
-
-        return Ok(new { token = new JwtSecurityTokenHandler().WriteToken(token) });
+        return Ok(new { token = _tokenService.GenerateToken() });
     }
 }
+
