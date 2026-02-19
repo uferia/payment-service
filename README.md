@@ -52,7 +52,7 @@ cd src/PaymentService.Api
 dotnet run
 ```
 
-The API starts on `https://localhost:5001` / `http://localhost:5000`.
+The API starts on `https://localhost:7236` / `http://localhost:5144`.
 
 > **Development JWT secret** is configured in `appsettings.Development.json`. Never use in production.
 
