@@ -54,9 +54,10 @@ public class PaymentServiceTests
     public async Task CreatePayment_ConcurrentDuplicate_ReReadsAndReturnsExisting()
     {
         var existing = new Payment { Id = Guid.NewGuid(), ReferenceId = "REF-002", Amount = 50m, Currency = "EUR", Status = PaymentStatus.Pending, CreatedAtUtc = DateTime.UtcNow, UpdatedAtUtc = DateTime.UtcNow };
-        _repositoryMock.Setup(r => r.GetByReferenceIdAsync("REF-002")).ReturnsAsync((Payment?)null);
+        _repositoryMock.SetupSequence(r => r.GetByReferenceIdAsync("REF-002"))
+            .ReturnsAsync((Payment?)null)
+            .ReturnsAsync(existing);
         _repositoryMock.Setup(r => r.CreateAsync(It.IsAny<Payment>())).ReturnsAsync(false);
-        _repositoryMock.Setup(r => r.GetByReferenceIdAsync("REF-002")).ReturnsAsync(existing);
 
         var request = new CreatePaymentRequest { Amount = 50m, Currency = "EUR", ReferenceId = "REF-002" };
         var (response, isExisting) = await _service.CreatePaymentAsync(request);
